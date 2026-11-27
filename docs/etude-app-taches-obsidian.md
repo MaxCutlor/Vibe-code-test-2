@@ -14,7 +14,8 @@
 | Ça existe déjà ? | **En partie.** Plusieurs plugins inspirés de Todoist existent (belki, Graphite, Flowstitch, Tasks Plus, Task Genius), ainsi qu'une app iOS native qui lit le vault (TaskForge). **À tester avant de coder** (voir §3). |
 | Meilleure architecture ? | **Un plugin Obsidian d'abord** (une seule base de code pour PC + iPhone, aucun souci de synchro), **puis une app iOS compagnon** seulement si tu as besoin de notifications et de widgets fiables. |
 | Le vrai point dur ? | **Les notifications sur iOS.** Un plugin Obsidian ne peut pas te notifier quand l'app est fermée. Pour ça, il faut une app native (ou un serveur et une PWA). |
-| Décision qui conditionne tout | **Ton mode de synchro** du vault (Obsidian Sync, iCloud, Git, Syncthing…) et **le format** de tes tâches actuelles. |
+| Sans Obsidian Sync ? | **Oui.** iCloud Drive si ton ordinateur est un Mac. Si c'est un PC Windows, Self-hosted LiveSync sur un serveur chez toi, car iCloud est déconseillé avec Windows (voir §5). |
+| Décision qui conditionne tout | **Mac ou Windows** (ça décide de la synchro, donc de la façon d'avoir des notifications sur iPhone), et **le format** de tes tâches actuelles. |
 
 ---
 
@@ -84,7 +85,7 @@ L'app vit **dans** Obsidian, sous forme d'onglet ou de panneau, avec une interfa
 - **iOS** : SwiftUI, ou Capacitor pour réutiliser le code TypeScript. L'utilisateur choisit le dossier du vault une fois dans le sélecteur Fichiers, et l'app garde l'accès via un *bookmark* (mécanisme officiel d'Apple). C'est ce que fait TaskForge.
 - **Pour** : notifications locales fiables, widgets, ajout rapide via la feuille de partage ou Siri, démarrage instantané.
 - **Contre** :
-  - **Si tu utilises Obsidian Sync** : seule l'app Obsidian synchronise. Ce que l'app compagnon modifie sur l'iPhone ne part vers le PC qu'à la prochaine ouverture d'Obsidian. Avec un vault dans **iCloud Drive**, la synchro se fait en arrière-plan.
+  - **Si tu utilises Obsidian Sync ou un plugin de synchro (LiveSync, Remotely Save)** : seule l'app Obsidian synchronise. Ce que l'app compagnon modifie sur l'iPhone ne part vers le PC qu'à la prochaine ouverture d'Obsidian. Avec un vault dans **iCloud Drive**, la synchro se fait en arrière-plan.
   - Risque de conflit si Obsidian et l'app modifient le même fichier en même temps.
   - Compte Apple Developer (environ 99 €/an) pour l'installer durablement (TestFlight). Sans compte, l'app expire tous les 7 jours.
   - Deux interfaces à maintenir (PC et iOS).
@@ -109,18 +110,64 @@ Une bibliothèque **`task-core`** en TypeScript contient toutes les règles : pa
 
 ### D. Serveur et PWA (variante « tout web »)
 
-Un petit serveur (NAS ou VPS) garde une copie du vault grâce à **Obsidian Headless**, le client Obsidian Sync en ligne de commande, en bêta ouverte depuis mars 2026 (abonnement Sync requis). Il expose une API, et l'interface est une **PWA** installée sur l'écran d'accueil de l'iPhone et sur le PC. Les notifications passent par Web Push (iOS 16.4+).
+Un petit serveur (NAS, Raspberry Pi ou VPS) garde une copie du vault **en fichiers lisibles** :
 
-- **Pour** : une seule interface web partout, notifications possibles, accessible depuis n'importe quel navigateur.
-- **Contre** : un serveur à héberger et à sécuriser 24 h/24, un mode hors ligne plus difficile, une dépendance à une bêta.
+- **Sans Obsidian Sync** : `livesync-bridge` recopie le vault Self-hosted LiveSync dans un dossier, dans les deux sens (voir §5).
+- Avec Obsidian Sync : Obsidian Headless, le client Sync en ligne de commande (en bêta ouverte depuis mars 2026).
+
+Le serveur fait tourner `task-core`, envoie les rappels et peut servir une **PWA** façon Todoist, installée sur l'écran d'accueil de l'iPhone et sur le PC. Pour les rappels, deux voies : **ntfy** (app iOS gratuite, serveur auto-hébergeable, c'est le plus simple) ou Web Push via la PWA (iOS 16.4+).
+
+- **Pour** : notifications fiables sur iPhone sans app native ; ajout rapide même hors d'Obsidian ; une seule interface web partout.
+- **Contre** : un serveur à garder allumé et à sécuriser (Tailscale évite d'exposer un port sur Internet) ; mode hors ligne de la PWA plus difficile.
 
 ### Recommandation
 
-**A tout de suite, C si les notifications iOS sont indispensables, D seulement si tu as déjà un serveur et Obsidian Sync.**
+**Le choix dépend de ta synchro (§5) :**
+
+- **Mac + iCloud** : A, puis C (app iOS compagnon native). C'est le chemin le plus simple.
+- **Windows + serveur maison (LiveSync)** : A, puis D (service de rappels sur le même serveur). L'app iOS native perd son intérêt : avec LiveSync, les fichiers de l'iPhone ne changent que lorsque Obsidian est ouvert.
 
 ---
 
-## 5. Le modèle de données (la décision la plus importante)
+## 5. Synchroniser le vault sans Obsidian Sync
+
+But : arrêter Obsidian Sync, qui coûte environ 4 $/mois en annuel (5 $ en mensuel).
+
+**Le critère décisif est ton ordinateur : Mac ou PC Windows ?** L'aide officielle d'Obsidian déconseille iCloud dès qu'une machine Windows est dans la boucle. Les utilisateurs signalent des doublons (« note (1).md »), des fichiers bloqués « en attente », voire corrompus. Une note dans un forum dit que la version 1.11 aurait corrigé un problème, mais rien d'officiel ne le confirme.
+
+### Options comparées
+
+| Option | Coût | iPhone | Windows | Temps réel | Fichiers lisibles sur un serveur | Effet sur l'app de tâches |
+|---|---|---|---|---|---|---|
+| **iCloud Drive** | 0 € (5 Go gratuits) ou iCloud+ déjà payé | Natif | **Déconseillé** | Presque | Pas de serveur | **Idéal pour une app iOS compagnon** : iOS synchronise en arrière-plan |
+| **Self-hosted LiveSync + CouchDB chez toi** (NAS, Raspberry Pi, mini-PC) | Électricité seulement | Plugin | Plugin | **Oui** | Oui, via `livesync-bridge` | Plugin OK ; rappels iPhone via un service sur ce serveur (option D) |
+| **Self-hosted LiveSync + stockage objet** (Cloudflare R2 gratuit, MinIO) | 0 € dans le quota gratuit R2 | Plugin | Plugin | Non (périodique) | Non | Plugin OK ; pas de serveur pour les rappels |
+| Self-hosted LiveSync + CouchDB sur un VPS | Environ 4 à 6 €/mois | Plugin | Plugin | Oui | Oui | Comme chez toi, mais **même prix qu'Obsidian Sync**, donc aucune économie |
+| Remotely Save + WebDAV (Nextcloud, Synology) | 0 € si le serveur existe déjà | Plugin | Plugin | Non (périodique) | Oui | Possible, mais conflits mal gérés en version gratuite (la gestion avancée est payante) |
+| Git (plugin Obsidian Git) | 0 € | Lent | Bon | Non | Oui | Plutôt pour la **sauvegarde** que pour la synchro |
+| Syncthing | 0 € | Fragile (iOS coupe les apps en arrière-plan) | Bon | Oui entre ordinateurs | Oui | Peu fiable sur iPhone |
+
+### Recommandation
+
+- **Si ton ordinateur est un Mac : iCloud Drive partout.** C'est gratuit, sans serveur, et c'est le meilleur terrain pour une app iOS compagnon (rappels, widgets).
+- **Si c'est un PC Windows : Self-hosted LiveSync avec CouchDB sur une machine chez toi** (NAS, Raspberry Pi, mini-PC). Tu y accèdes depuis l'extérieur avec **Tailscale** (VPN gratuit, sans ouvrir de port). La synchro est en temps réel, chiffrée de bout en bout si tu actives l'option, et identique sur Windows et sur iPhone. Le même serveur pourra plus tard faire tourner le service de rappels de l'app de tâches (option D).
+  - **Pas de machine allumée en permanence ?** LiveSync + Cloudflare R2 (gratuit, aucun serveur à gérer). Mais tu n'auras des rappels que lorsque Obsidian est ouvert.
+- **Un VPS loué n'apporte rien** pour la seule synchro : il coûte autant qu'Obsidian Sync. Il ne se justifie que s'il héberge aussi l'app de tâches (option D).
+
+### Migrer depuis Obsidian Sync sans rien perdre
+
+1. **Sauvegarde** : zippe le dossier du vault sur l'ordinateur.
+2. Vérifie que Sync est à jour sur tous les appareils, puis **désactive Sync partout** (Réglages → Plugins principaux → Synchronisation). Ne fais jamais tourner deux synchros sur le même vault.
+3. Installe la nouvelle synchro **sur l'ordinateur d'abord**, qui sert de source de référence.
+   - iCloud sur Mac : déplace le vault dans `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/` et active « Toujours conserver le téléchargement » sur ce dossier.
+   - LiveSync : installe CouchDB avec Docker sur le serveur, puis le plugin sur l'ordinateur, et envoie le vault vers le serveur.
+4. Sur l'iPhone, **crée un vault neuf et vide** (dans iCloud, ou local et rempli par LiveSync via l'« URI de configuration » générée sur l'ordinateur). Ne le fusionne pas avec l'ancienne copie, pour éviter les doublons. Supprime l'ancien vault de l'iPhone une fois que tout est vérifié.
+5. **Remplace l'historique des versions de Sync** : plugin Obsidian Git sur l'ordinateur (commit automatique toutes les 30 min vers un dépôt privé), ou sauvegardes du serveur. Garde aussi le plugin principal « Récupération de fichiers ».
+6. **Résilie Obsidian Sync** après une à deux semaines sans problème.
+
+---
+
+## 6. Le modèle de données (la décision la plus importante)
 
 Ton besoin est de « récupérer les tâches partout ». Le format de base doit donc être **la case à cocher en ligne, au format Tasks (emoji)**, et non « une note par tâche ». C'est le format le plus répandu, et belki, Task Genius, TaskForge et le plugin Tasks le comprennent déjà : aucun verrouillage.
 
@@ -157,7 +204,7 @@ couleur: bleu
 
 ---
 
-## 6. Points durs et risques
+## 7. Points durs et risques
 
 | Risque | Impact | Parade |
 |---|---|---|
@@ -172,7 +219,7 @@ couleur: bleu
 
 ---
 
-## 7. Stack technique conseillée
+## 8. Stack technique conseillée
 
 - **Langage** : TypeScript partout (le noyau est partagé).
 - **`task-core`** : parseur et sérialiseur de lignes de tâches (tests unitaires lourds), moteur de filtres, `rrule` (récurrence), `chrono-node` avec la locale `fr` (dates en langage naturel). Tests avec Vitest.
@@ -182,26 +229,30 @@ couleur: bleu
 
 ---
 
-## 8. Feuille de route et estimation
+## 9. Feuille de route et estimation
 
 Les estimations sont indicatives, en jours de développement effectifs pour une personne aidée par l'IA.
 
 | Phase | Contenu | Durée |
 |---|---|---|
-| **0. Test de l'existant** | belki ou Graphite avec TaskForge, sur ton vault réel | 1 semaine d'usage |
+| **0. Quitter Obsidian Sync** | Nouvelle synchro (iCloud ou LiveSync), migration, sauvegarde Git (§5) | 1 soirée, puis 1 à 2 semaines d'observation |
+| **0 bis. Test de l'existant** | belki ou Graphite avec TaskForge, sur ton vault réel | 1 semaine d'usage |
 | **1. MVP plugin** | `task-core` (parseur, sérialiseur, index), vues Inbox / Aujourd'hui / À venir / Projets, ajout rapide en langage naturel, cocher, récurrence, priorités, étiquettes | 10 à 15 j |
 | **2. V1 plugin** | Filtres et filtres enregistrés, sections et sous-tâches éditables, kanban, calendrier, glisser-déposer, raccourcis clavier, réglages des règles de projet, stats | 10 à 15 j |
-| **3. Compagnon iOS** | Accès au dossier du vault, lecture et écriture via `task-core`, notifications locales, widget Aujourd'hui, ajout rapide (partage, Siri) | 20 à 30 j |
+| **3a. Compagnon iOS** (si Mac + iCloud) | Accès au dossier du vault, lecture et écriture via `task-core`, notifications locales, widget Aujourd'hui, ajout rapide (partage, Siri) | 20 à 30 j |
+| **3b. Service serveur** (si Windows + LiveSync) | `livesync-bridge` + `task-core` en tâche de fond, rappels via ntfy, puis éventuellement une PWA d'ajout rapide | 5 à 10 j (rappels seuls), 15 à 25 j avec la PWA |
 | **Bonus** | **Migration de tes tâches Todoist actuelles** vers le vault au bon format. Ton compte Todoist est connecté à cette session, je peux le faire directement. | 1 j |
 
 ---
 
-## 9. Questions pour décider
+## 10. Questions pour décider
 
-1. **Comment synchronises-tu ton vault** entre le PC et l'iPhone : Obsidian Sync, iCloud Drive, Git, Syncthing, autre ? (C'est ce qui conditionne l'app compagnon iOS.)
-2. **Où et comment sont écrites tes tâches aujourd'hui** : cases nues, format Tasks avec emojis, format Dataview, notes quotidiennes ?
-3. **Les notifications et widgets iOS sont-ils indispensables**, ou une app ouverte à la demande te suffit-elle ?
-4. Ton PC est-il sous **Windows** ?
+Réponse déjà reçue : synchro actuelle = Obsidian Sync, à remplacer par iCloud ou un serveur perso.
+
+1. **Ton ordinateur est-il un Mac ou un PC Windows ?** C'est ce qui tranche entre iCloud et un serveur maison.
+2. **As-tu une machine allumée en permanence chez toi** (NAS, Raspberry Pi, vieux PC, box avec Docker) ?
+3. **Où et comment sont écrites tes tâches aujourd'hui** : cases nues, format Tasks avec emojis, format Dataview, notes quotidiennes ?
+4. **Les rappels et widgets sur iPhone sont-ils indispensables**, ou une app ouverte à la demande te suffit-elle ?
 5. Usage **uniquement personnel** (sans partage de projets) ?
 6. Veux-tu **migrer tes tâches Todoist** existantes dans le vault ?
 
@@ -220,5 +271,10 @@ Les estimations sont indicatives, en jours de développement effectifs pour une 
 - Format emoji du plugin Tasks : https://publish.obsidian.md/tasks/Reference/Task+Formats/Tasks+Emoji+Format
 - Dépendances (🆔 / ⛔) du plugin Tasks : https://publish.obsidian.md/tasks/Getting+Started/Task+Dependencies
 - Obsidian Headless (Sync en ligne de commande) : https://obsidian.md/help/sync/headless
+- Tarifs Obsidian Sync : https://obsidian.md/sync
+- iCloud et Windows, retours d'utilisateurs : https://forum.obsidian.md/t/icloud-on-windows-creates-duplicate-files/48358, https://dev.to/eristoddle/obsidian-icloud-sync-in-2026-including-the-windows-problem-4503
+- Self-hosted LiveSync (CouchDB, stockage objet, pair à pair) : https://github.com/vrtmrz/obsidian-livesync, https://community.obsidian.md/plugins/obsidian-livesync
+- livesync-bridge (vault LiveSync vers dossier de fichiers) : https://github.com/vrtmrz/livesync-bridge
+- Remotely Save (WebDAV, S3) : https://community.obsidian.md/plugins/remotely-save
 - Obsidian CLI : https://obsidian.md/cli
 - Apple, accès aux dossiers depuis le sélecteur de documents : https://developer.apple.com/documentation/uikit/providing-access-to-directories
